@@ -58,7 +58,7 @@ export function registerDashboard(program: Command): void {
         config.directTerminalPort,
       );
 
-      const child = spawn("node", ["dist-server/unified-server.js"], {
+      const child = spawn(process.execPath, ["dist-server/unified-server.js"], {
         cwd: webDir,
         stdio: ["inherit", "inherit", "pipe"],
         env: { ...env, PORT: String(port), HOSTNAME: "0.0.0.0", NODE_ENV: "production" },
