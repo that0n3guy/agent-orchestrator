@@ -236,9 +236,9 @@ groups:
 
 ## Constraints
 
-- Must not break existing single-worker `ao spawn` flow — it should still work as a simple "spawn builder for issue"
-- Must be backwards compatible with existing config format (new fields optional)
-- Dashboard changes should be incremental — don't rewrite the whole frontend at once
+- No backwards compatibility required — this is a clean-cut replacement of the old session model
+- Old config format without `agentTypes` and `groups` is invalid
+- All sessions require `agentType` and `issueId`
 - The six agent types are the full set for v1 — don't design for arbitrary custom types yet
 
 ---
