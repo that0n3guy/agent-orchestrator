@@ -22,7 +22,7 @@ Six agent types replace the current `orchestrator` + `worker` model:
 | Type | Role | Lifecycle | Writes code? | tmux session? |
 |------|------|-----------|-------------|--------------|
 | **Orchestrator** | Team lead / coordinator / human interface | Always running | No | Yes (1 per project or group) |
-| **Planner** | Discovery, PRD, task breakdown | Persistent: created at discovery, lives until ready | No (writes PRD/tasks only) | Yes |
+| **Planner** | Discovery, PRD, task breakdown | Ephemeral: created at discovery, killed when issue moves to ready | No (writes PRD/tasks only) | Yes |
 | **Builder** | Implementation from tasks | Persistent: created at building, lives until merge ready | Yes | Yes |
 | **Tester** | Spins up dev env, runs tests | Persistent: created at building, lives until merge ready | No (runs tests, reports) | Yes |
 | **Claude Reviewer** | Code review from Claude's perspective | Ephemeral: created per review cycle, dies after posting | No (posts PR comments) | Yes (short-lived) |
@@ -34,7 +34,8 @@ An **issue team** is a group of agents working on one issue in one shared worktr
 
 - **1 worktree per issue** — keeps code separate for PRs
 - **Multiple tmux sessions per worktree** — each agent has its own session
-- **Persistent agents stay alive** from their creation until merge ready
+- **Persistent agents (builder, tester) stay alive** from their creation until merge ready
+- **Planner is ephemeral** — killed when issue moves to ready (orchestrator can handle plan questions later)
 - **Agents don't talk directly** — the system (lifecycle worker + hooks) mediates transitions
 - **The orchestrator is NOT in the team** — it sits above, monitoring all teams
 
@@ -129,9 +130,10 @@ The orchestrator is the human's interface to all teams:
 
 The orchestrator knows about all issues, all teams, all agents. It can:
 - Check any agent's status
-- Send messages to any agent
+- Send messages to any agent via `ao send` (just like the human would)
 - Trigger actions (run tests, request review)
 - Answer questions about progress across issues
+- Handle plan clarification questions itself (no need to keep planner alive)
 
 #### 8. Builder Self-Validation
 
@@ -204,13 +206,17 @@ projects:
         agent: codex
         lifecycle: ephemeral
 
-# Repo group config
+# Repo group — explicit config, not inferred
 groups:
   solidactions:
+    name: SolidActions
     tracker:
       plugin: github
       repo: SolidActions/solidactions-work
     projects: [solidactions-app, solidactions-cli, solidactions-ts-sdk, solidactions-examples, solidactions-marketing, solidactions-site]
+    # One orchestrator for the whole group
+    # One kanban board for the whole group
+    # Label-based routing to correct code repo
 ```
 
 **Event system:**
