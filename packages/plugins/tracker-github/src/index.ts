@@ -110,6 +110,29 @@ function mapState(ghState: string, stateReason?: string | null): Issue["state"] 
 }
 
 // ---------------------------------------------------------------------------
+// Helpers — resolve tracker repo
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve which GitHub repo to use for issue operations.
+ * If the project has a tracker.repo override (e.g. a centralized issues repo),
+ * use that. Otherwise fall back to the project's code repo.
+ */
+function trackerRepo(project: ProjectConfig): string {
+  const override = project.tracker?.repo;
+  return typeof override === "string" && override ? override : project.repo;
+}
+
+/**
+ * Build a ProjectConfig-like object pointing at the tracker repo.
+ * Used so existing helpers that take `project` and read `project.repo` work correctly.
+ */
+function withTrackerRepo(project: ProjectConfig): ProjectConfig {
+  const repo = trackerRepo(project);
+  return repo === project.repo ? project : { ...project, repo };
+}
+
+// ---------------------------------------------------------------------------
 // Tracker implementation
 // ---------------------------------------------------------------------------
 
@@ -118,7 +141,7 @@ function createGitHubTracker(): Tracker {
     name: "github",
 
     async getIssue(identifier: string, project: ProjectConfig): Promise<Issue> {
-      const raw = await ghIssueViewJson(identifier, project);
+      const raw = await ghIssueViewJson(identifier, withTrackerRepo(project));
 
       const data: {
         number: number;
@@ -148,7 +171,7 @@ function createGitHubTracker(): Tracker {
         "view",
         identifier,
         "--repo",
-        project.repo,
+        trackerRepo(project),
         "--json",
         "state",
       ]);
@@ -158,7 +181,7 @@ function createGitHubTracker(): Tracker {
 
     issueUrl(identifier: string, project: ProjectConfig): string {
       const num = identifier.replace(/^#/, "");
-      return `https://github.com/${project.repo}/issues/${num}`;
+      return `https://github.com/${trackerRepo(project)}/issues/${num}`;
     },
 
     issueLabel(url: string, _project: ProjectConfig): string {
@@ -195,6 +218,28 @@ function createGitHubTracker(): Tracker {
         lines.push("## Description", "", issue.description);
       }
 
+      // Check for planning artifacts in the tracker repo
+      const repo = trackerRepo(project);
+      const num = identifier.replace(/^#/, "");
+
+      for (const file of ["prd.md", "tasks.md"] as const) {
+        try {
+          const content = await gh([
+            "api",
+            `repos/${repo}/contents/plans/issue-${num}/${file}`,
+            "--jq",
+            ".content",
+          ]);
+          if (content) {
+            const decoded = Buffer.from(content.trim(), "base64").toString("utf-8");
+            const label = file === "prd.md" ? "Product Requirements Document" : "Implementation Tasks";
+            lines.push("", `## ${label}`, "", decoded);
+          }
+        } catch {
+          // No plan file found — that's fine, not all issues have plans
+        }
+      }
+
       lines.push(
         "",
         "Please implement the changes described in this issue. When done, commit and push your changes.",
@@ -204,11 +249,12 @@ function createGitHubTracker(): Tracker {
     },
 
     async listIssues(filters: IssueFilters, project: ProjectConfig): Promise<Issue[]> {
+      const repo = trackerRepo(project);
       const args = [
         "issue",
         "list",
         "--repo",
-        project.repo,
+        repo,
         "--limit",
         String(filters.limit ?? 30),
       ];
@@ -257,12 +303,13 @@ function createGitHubTracker(): Tracker {
       update: IssueUpdate,
       project: ProjectConfig,
     ): Promise<void> {
+      const repo = trackerRepo(project);
       // Handle state change — GitHub Issues only supports open/closed.
       // "in_progress" is not a GitHub state, so it is intentionally a no-op.
       if (update.state === "closed") {
-        await gh(["issue", "close", identifier, "--repo", project.repo]);
+        await gh(["issue", "close", identifier, "--repo", repo]);
       } else if (update.state === "open") {
-        await gh(["issue", "reopen", identifier, "--repo", project.repo]);
+        await gh(["issue", "reopen", identifier, "--repo", repo]);
       }
 
       // Handle label removal
@@ -272,7 +319,7 @@ function createGitHubTracker(): Tracker {
           "edit",
           identifier,
           "--repo",
-          project.repo,
+          repo,
           "--remove-label",
           update.removeLabels.join(","),
         ]);
@@ -285,7 +332,7 @@ function createGitHubTracker(): Tracker {
           "edit",
           identifier,
           "--repo",
-          project.repo,
+          repo,
           "--add-label",
           update.labels.join(","),
         ]);
@@ -298,7 +345,7 @@ function createGitHubTracker(): Tracker {
           "edit",
           identifier,
           "--repo",
-          project.repo,
+          repo,
           "--add-assignee",
           update.assignee,
         ]);
@@ -311,7 +358,7 @@ function createGitHubTracker(): Tracker {
           "comment",
           identifier,
           "--repo",
-          project.repo,
+          repo,
           "--body",
           update.comment,
         ]);
@@ -319,11 +366,12 @@ function createGitHubTracker(): Tracker {
     },
 
     async createIssue(input: CreateIssueInput, project: ProjectConfig): Promise<Issue> {
+      const repo = trackerRepo(project);
       const args = [
         "issue",
         "create",
         "--repo",
-        project.repo,
+        repo,
         "--title",
         input.title,
         "--body",

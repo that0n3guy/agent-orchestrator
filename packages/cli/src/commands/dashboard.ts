@@ -58,10 +58,10 @@ export function registerDashboard(program: Command): void {
         config.directTerminalPort,
       );
 
-      const child = spawn("npx", ["next", "dev", "-p", String(port)], {
+      const child = spawn("node", ["dist-server/unified-server.js"], {
         cwd: webDir,
         stdio: ["inherit", "inherit", "pipe"],
-        env,
+        env: { ...env, PORT: String(port), HOSTNAME: "0.0.0.0", NODE_ENV: "production" },
       });
 
       const stderrChunks: string[] = [];

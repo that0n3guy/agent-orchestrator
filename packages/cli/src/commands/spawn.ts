@@ -55,6 +55,65 @@ function autoDetectProject(config: OrchestratorConfig): string {
   );
 }
 
+/**
+ * Resolve which project an issue belongs to by checking the issue's labels
+ * against each project's tracker.label config.
+ * Falls back to autoDetectProject if no label match is found.
+ */
+async function resolveProjectForIssue(
+  config: OrchestratorConfig,
+  issueId: string,
+): Promise<string> {
+  // Build a map of tracker label → project ID for projects that use a shared tracker repo
+  const labelToProject = new Map<string, string>();
+  let sharedTrackerRepo: string | undefined;
+
+  for (const [id, project] of Object.entries(config.projects)) {
+    const trackerLabel = project.tracker?.label;
+    const trackerRepo = project.tracker?.repo;
+    if (typeof trackerLabel === "string" && typeof trackerRepo === "string") {
+      labelToProject.set(trackerLabel, id);
+      sharedTrackerRepo = trackerRepo;
+    }
+  }
+
+  // If no projects use label-based routing, fall back
+  if (labelToProject.size === 0 || !sharedTrackerRepo) {
+    return autoDetectProject(config);
+  }
+
+  // Fetch issue labels from the shared tracker repo
+  try {
+    const { stdout } = await import("node:child_process").then((cp) =>
+      import("node:util").then((util) =>
+        util.promisify(cp.execFile)("gh", [
+          "issue",
+          "view",
+          issueId,
+          "--repo",
+          sharedTrackerRepo!,
+          "--json",
+          "labels",
+        ]),
+      ),
+    );
+    const data: { labels: Array<{ name: string }> } = JSON.parse(stdout.trim());
+    const issueLabels = data.labels.map((l) => l.name);
+
+    // Match issue labels against project tracker labels
+    for (const label of issueLabels) {
+      const projectId = labelToProject.get(label);
+      if (projectId) {
+        return projectId;
+      }
+    }
+  } catch {
+    // If gh call fails, fall back to auto-detect
+  }
+
+  return autoDetectProject(config);
+}
+
 interface SpawnClaimOptions {
   claimPr?: string;
   assignOnGithub?: boolean;
@@ -200,7 +259,7 @@ export function registerSpawn(program: Command): void {
         if (first) {
           issueId = first;
           try {
-            projectId = autoDetectProject(config);
+            projectId = await resolveProjectForIssue(config, issueId);
           } catch (err) {
             console.error(chalk.red(err instanceof Error ? err.message : String(err)));
             process.exit(1);
