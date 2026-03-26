@@ -22,7 +22,7 @@ Six agent types replace the current `orchestrator` + `worker` model:
 | Type | Role | Lifecycle | Writes code? | tmux session? |
 |------|------|-----------|-------------|--------------|
 | **Orchestrator** | Team lead / coordinator / human interface | Always running | No | Yes (1 per project or group) |
-| **Planner** | Discovery, PRD, task breakdown | Ephemeral: created at discovery, killed when issue moves to ready | No (writes PRD/tasks only) | Yes |
+| **Planner** | Discovery, PRD, task breakdown, research/POC scripts | Ephemeral: created at discovery, killed when issue moves to ready | Yes (research scripts, not production code) | Yes |
 | **Builder** | Implementation from tasks | Persistent: created at building, lives until merge ready | Yes | Yes |
 | **Tester** | Spins up dev env, runs tests | Persistent: created at building, lives until merge ready | No (runs tests, reports) | Yes |
 | **Claude Reviewer** | Code review from Claude's perspective | Ephemeral: created per review cycle, dies after posting | No (posts PR comments) | Yes (short-lived) |
@@ -36,6 +36,7 @@ An **issue team** is a group of agents working on one issue in one shared worktr
 - **Multiple tmux sessions per worktree** — each agent has its own session
 - **Persistent agents (builder, tester) stay alive** from their creation until merge ready
 - **Planner is ephemeral** — killed when issue moves to ready (orchestrator can handle plan questions later)
+- **Planner writes research scripts** — POC/test scripts for API exploration, capability testing, etc. These stay in the worktree so the builder can reference them. Not production code — cleaned up before merge.
 - **Agents don't talk directly** — the system (lifecycle worker + hooks) mediates transitions
 - **The orchestrator is NOT in the team** — it sits above, monitoring all teams
 
